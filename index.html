@@ -1,160 +1,579 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<title>Package Export</title>
-
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip"></script>
-
-<style>
-body{
-  margin:0;
-  background:#f7f7f7;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial;
-}
-
-.container{
-  max-width:640px;
-  margin:120px auto;
-  padding:40px;
-  background:#fff;
-  border:1px solid #e6e6e6;
-  border-radius:8px;
-}
-
-h1{
-  font-size:22px;
-  font-weight:600;
-  margin-bottom:30px;
-}
-
-.input{
-  margin-bottom:16px;
-}
-
-input[type=file]{
-  width:100%;
-  padding:10px;
-  border:1px solid #e6e6e6;
-  border-radius:6px;
-  background:#fafafa;
-}
-
-button{
-  margin-top:20px;
-  width:100%;
-  padding:12px;
-  border:1px solid #e6e6e6;
-  background:#111;
-  color:#fff;
-  border-radius:6px;
-  font-size:14px;
-  cursor:pointer;
-}
-
-button:hover{
-  opacity:.9;
-}
-
-.note{
-  margin-top:16px;
-  font-size:12px;
-  color:#888;
-}
-</style>
-</head>
-
-<body>
-
-<div class="container">
-<h1>Package Export</h1>
-
-<div class="input">
-<input type="file" id="f1">
-</div>
-
-<div class="input">
-<input type="file" id="f2">
-</div>
-
-<button onclick="run()">Generate</button>
-
-<div class="note">
-Columns required: 责任机构 / 责任人 / 运单号
-</div>
-
-</div>
-
-<script>
-
-async function read(file){
-  let wb=XLSX.read(await file.arrayBuffer());
-  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
-}
-
-function build(org,data){
-  let rows=[[org,"","",data.length]];
-  let m={};
-  data.forEach(d=>{
-    (m[d["责任人"]]??=[]).push(d["运单号"]);
-  });
-
-  for(let p in m){
-    rows.push(["",p,"",m[p].length]);
-    m[p].forEach(w=>rows.push(["","",w,1]));
-  }
-
-  let ws=XLSX.utils.aoa_to_sheet(rows);
-  let wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"Sheet1");
-
-  return XLSX.write(wb,{type:"array",bookType:"xlsx"});
-}
-
-async function exportZip(rows,name){
-
-  let zip=new JSZip();
-  let g={};
-
-  rows.forEach(r=>{
-    let o=r["责任机构"];
-    let p=r["责任人"];
-    let w=r["运单号"];
-
-    if(o&&p&&w){
-      (g[o]??=[]).push({p,w});
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Package Split</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    :root{
+      --bg1:#eaf2fb;
+      --bg2:#ffffff;
+      --glass:rgba(255,255,255,.52);
+      --glass-strong:rgba(255,255,255,.68);
+      --line:rgba(255,255,255,.46);
+      --text:#1d1d1f;
+      --muted:#6e6e73;
+      --blue:#007aff;
+      --blue2:#5ac8fa;
+      --blue-press:#0062cc;
+      --green:#30d158;
+      --yellow:#ffd60a;
+      --red:#ff5f57;
+      --shadow:0 30px 80px rgba(15,23,42,.16);
+      --shadow-soft:0 10px 30px rgba(0,122,255,.12);
+      --radius:24px;
+      --radius-sm:12px;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
     }
-  });
 
-  for(let o in g){
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(900px 520px at 12% -8%, rgba(90,200,250,.22), transparent 55%),
+        radial-gradient(780px 560px at 100% 10%, rgba(255,95,87,.10), transparent 52%),
+        radial-gradient(560px 420px at 50% 100%, rgba(0,122,255,.08), transparent 58%),
+        linear-gradient(135deg,var(--bg1),var(--bg2));
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:28px;
+      overflow:hidden;
+    }
 
-    let rows=g[o].map(x=>({"责任人":x.p,"运单号":x.w}));
+    .window{
+      position:relative;
+      width:min(430px,100%);
+      border-radius:22px;
+      overflow:hidden;
+      box-shadow:var(--shadow);
+      border:1px solid rgba(255,255,255,.45);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.74), rgba(255,255,255,.42)),
+        linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,.12));
+      backdrop-filter:blur(28px) saturate(165%);
+      -webkit-backdrop-filter:blur(28px) saturate(165%);
+      transform:translateZ(0);
+      isolation:isolate;
+    }
+    .window::before{
+      content:"";
+      position:absolute; inset:0;
+      background:
+        radial-gradient(380px 160px at 0% 0%, rgba(255,255,255,.52), transparent 60%),
+        radial-gradient(260px 180px at 100% 100%, rgba(90,200,250,.12), transparent 60%);
+      pointer-events:none;
+      z-index:0;
+    }
 
-    zip.file(
-      o+"_"+name+".xlsx",
-      build(o,rows)
-    );
-  }
+    .titlebar{
+      position:relative;
+      z-index:1;
+      height:46px;
+      display:flex;
+      align-items:center;
+      padding:0 14px;
+      border-bottom:1px solid rgba(0,0,0,.06);
+      background:linear-gradient(180deg, rgba(255,255,255,.32), rgba(255,255,255,.16));
+    }
+    .traffic{display:flex;gap:8px}
+    .dot{
+      width:12px;height:12px;border-radius:50%;
+      box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);
+    }
+    .red{background:var(--red)}
+    .yellow{background:var(--yellow)}
+    .green{background:var(--green)}
+    .title{
+      flex:1;
+      text-align:center;
+      font-size:13px;
+      color:#4a4a4d;
+      font-weight:600;
+      transform:translateX(-20px);
+      letter-spacing:.2px;
+    }
 
-  let blob=await zip.generateAsync({type:"blob"});
+    .content{
+      position:relative;
+      z-index:1;
+      padding:18px 18px 16px;
+    }
 
-  let a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=name+".zip";
-  a.click();
-}
+    .drop-label{
+      font-size:12px;
+      color:var(--muted);
+      margin:0 0 6px 2px;
+    }
 
-async function run(){
+    .drop{
+      position:relative;
+      border-radius:14px;
+      min-height:58px;
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      background:rgba(255,255,255,.72);
+      border:1px solid rgba(0,0,0,.08);
+      margin-bottom:10px;
+      cursor:pointer;
+      overflow:hidden;
+      transition:
+        transform .22s cubic-bezier(.2,.8,.2,1),
+        box-shadow .22s cubic-bezier(.2,.8,.2,1),
+        border-color .22s ease,
+        background .22s ease;
+      will-change:transform;
+    }
+    .drop:hover{
+      box-shadow:0 8px 22px rgba(0,122,255,.10);
+      border-color:rgba(0,122,255,.22);
+      background:rgba(255,255,255,.88);
+    }
+    .drop.drag{
+      transform:scale(1.018);
+      border-color:rgba(0,122,255,.55);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.96), rgba(0,122,255,.06));
+      box-shadow:
+        0 0 0 1px rgba(0,122,255,.14),
+        0 0 28px rgba(0,122,255,.18),
+        0 12px 28px rgba(0,122,255,.14);
+    }
+    .drop.ready{
+      border-color:rgba(48,209,88,.28);
+      background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(48,209,88,.05));
+    }
+    .drop input{display:none}
+    .drop .inner{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      width:100%;
+      align-items:center;
+      justify-content:center;
+    }
+    .drop .main{
+      font-size:13px;
+      font-weight:600;
+      color:#232326;
+    }
+    .drop .sub{
+      font-size:12px;
+      color:var(--muted);
+      max-width:100%;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .check{
+      position:absolute;
+      right:12px;
+      top:50%;
+      transform:translateY(-50%) scale(.7);
+      width:20px;height:20px;
+      border-radius:999px;
+      display:grid;
+      place-items:center;
+      background:rgba(48,209,88,.12);
+      color:#169b3a;
+      font-size:12px;
+      opacity:0;
+      transition:opacity .18s ease, transform .24s cubic-bezier(.2,.9,.2,1);
+    }
+    .drop.ready .check{
+      opacity:1;
+      transform:translateY(-50%) scale(1);
+    }
 
-  let r1=await read(f1.files[0]);
-  let r2=await read(f2.files[0]);
+    .button{
+      position:relative;
+      width:100%;
+      height:40px;
+      margin-top:6px;
+      border:none;
+      border-radius:12px;
+      background:linear-gradient(180deg, #1c86ff, var(--blue));
+      color:#fff;
+      font-size:14px;
+      font-weight:650;
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      box-shadow:
+        0 8px 22px rgba(0,122,255,.24),
+        inset 0 1px 0 rgba(255,255,255,.20);
+      transition:
+        transform .18s cubic-bezier(.2,.8,.2,1),
+        box-shadow .18s cubic-bezier(.2,.8,.2,1),
+        background .18s ease;
+      will-change:transform;
+      overflow:hidden;
+    }
+    .button::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:linear-gradient(180deg, rgba(255,255,255,.20), transparent 40%);
+      pointer-events:none;
+    }
+    .button:hover{
+      transform:translateY(-1px) scale(1.005);
+      box-shadow:
+        0 12px 28px rgba(0,122,255,.28),
+        inset 0 1px 0 rgba(255,255,255,.24);
+    }
+    .button:active{
+      transform:translateY(1px) scale(.995);
+      background:linear-gradient(180deg, #1779eb, var(--blue-press));
+    }
+    .button[disabled]{
+      opacity:.78;
+      cursor:not-allowed;
+      transform:none;
+    }
+    .button.magnetic{
+      transition:
+        transform .10s linear,
+        box-shadow .18s cubic-bezier(.2,.8,.2,1),
+        background .18s ease;
+    }
 
-  exportZip(r1,"Suspected lost packages");
-  exportZip(r2,"Interruptions packages");
-}
+    .spinner{
+      width:14px;height:14px;border-radius:50%;
+      border:2px solid rgba(255,255,255,.42);
+      border-top-color:#fff;
+      display:none;
+      animation:spin .75s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
 
-</script>
+    .progress{
+      margin-top:12px;
+      height:6px;
+      background:rgba(0,0,0,.07);
+      border-radius:999px;
+      overflow:hidden;
+    }
+    .bar{
+      height:100%;
+      width:0%;
+      border-radius:999px;
+      background:linear-gradient(90deg,var(--blue2),var(--blue));
+      box-shadow:0 0 18px rgba(0,122,255,.24);
+      transition:width .22s ease;
+    }
 
+    .status{
+      margin-top:10px;
+      text-align:center;
+      font-size:12px;
+      color:var(--muted);
+      min-height:16px;
+    }
+    .status.ok{color:#10853a}
+    .status.err{color:#d70015}
+
+    .confetti{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      overflow:hidden;
+      z-index:3;
+    }
+    .piece{
+      position:absolute;
+      width:8px;
+      height:12px;
+      border-radius:2px;
+      opacity:0;
+      animation:fall 1200ms cubic-bezier(.2,.8,.2,1) forwards;
+      will-change:transform, opacity;
+    }
+    @keyframes fall{
+      0%{
+        opacity:1;
+        transform:translate3d(var(--x0), var(--y0), 0) rotate(0deg) scale(1);
+      }
+      100%{
+        opacity:0;
+        transform:translate3d(var(--x1), var(--y1), 0) rotate(var(--rot)) scale(.85);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="window" id="window">
+    <div class="confetti" id="confetti"></div>
+
+    <div class="titlebar">
+      <div class="traffic">
+        <div class="dot red"></div>
+        <div class="dot yellow"></div>
+        <div class="dot green"></div>
+      </div>
+      <div class="title">Package Split</div>
+    </div>
+
+    <div class="content">
+      <div class="drop-label">Suspected lost packages</div>
+      <label class="drop" id="drop1">
+        <input type="file" id="file1" accept=".xlsx,.xls" />
+        <div class="inner">
+          <div class="main">Drag or click Excel</div>
+          <div class="sub" id="file1Text">No file selected</div>
+        </div>
+        <div class="check">✓</div>
+      </label>
+
+      <div class="drop-label">Interruptions packages</div>
+      <label class="drop" id="drop2">
+        <input type="file" id="file2" accept=".xlsx,.xls" />
+        <div class="inner">
+          <div class="main">Drag or click Excel</div>
+          <div class="sub" id="file2Text">No file selected</div>
+        </div>
+        <div class="check">✓</div>
+      </label>
+
+      <button class="button magnetic" id="exportBtn" type="button">
+        <span id="btnText">Export</span>
+        <span class="spinner" id="spinner"></span>
+      </button>
+
+      <div class="progress">
+        <div class="bar" id="bar"></div>
+      </div>
+
+      <div class="status" id="status">Ready</div>
+    </div>
+  </div>
+
+  <script>
+    let file1 = null;
+    let file2 = null;
+
+    const drop1 = document.getElementById('drop1');
+    const drop2 = document.getElementById('drop2');
+    const input1 = document.getElementById('file1');
+    const input2 = document.getElementById('file2');
+    const file1Text = document.getElementById('file1Text');
+    const file2Text = document.getElementById('file2Text');
+    const exportBtn = document.getElementById('exportBtn');
+    const btnText = document.getElementById('btnText');
+    const spinner = document.getElementById('spinner');
+    const bar = document.getElementById('bar');
+    const statusEl = document.getElementById('status');
+    const confetti = document.getElementById('confetti');
+
+    function unique(arr){
+      return [...new Set(arr)];
+    }
+
+    function sanitize(s){
+      return String(s).replace(/[\\/:*?"<>|]+/g,"_");
+    }
+
+    function setStatus(text, cls=''){
+      statusEl.textContent = text;
+      statusEl.className = 'status' + (cls ? ' ' + cls : '');
+    }
+
+    function setProgress(v){
+      const n = Math.max(0, Math.min(100, v));
+      bar.style.width = n + '%';
+    }
+
+    function setBusy(busy){
+      exportBtn.disabled = busy;
+      spinner.style.display = busy ? 'inline-block' : 'none';
+      btnText.style.display = busy ? 'none' : 'inline';
+    }
+
+    function setupDrop(zone, input, setFile, textEl){
+      zone.addEventListener('click', () => input.click());
+
+      input.addEventListener('change', e => {
+        const f = e.target.files?.[0];
+        if(!f) return;
+        setFile(f);
+        textEl.textContent = f.name;
+        zone.classList.add('ready');
+      });
+
+      zone.addEventListener('dragover', e => {
+        e.preventDefault();
+        zone.classList.add('drag');
+      });
+
+      zone.addEventListener('dragleave', () => {
+        zone.classList.remove('drag');
+      });
+
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag');
+        const f = e.dataTransfer.files?.[0];
+        if(!f) return;
+        setFile(f);
+        textEl.textContent = f.name;
+        zone.classList.add('ready');
+      });
+    }
+
+    setupDrop(drop1, input1, f => file1 = f, file1Text);
+    setupDrop(drop2, input2, f => file2 = f, file2Text);
+
+    async function readExcel(file){
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+
+      const cleaned = [];
+      for(const r of rows){
+        const org = (r["责任机构"] || "").trim();
+        const person = (r["责任人"] || "").trim();
+        const waybill = (r["运单号"] || "").trim();
+        if(org && person && waybill){
+          cleaned.push({ org, person, waybill });
+        }
+      }
+      return cleaned;
+    }
+
+    function build(rows, org){
+      const orgRows = rows.filter(r => r.org === org);
+      const aoa = [];
+      aoa.push([org, "", "", orgRows.length]);
+
+      const people = unique(orgRows.map(r => r.person));
+      for(const p of people){
+        const prs = orgRows.filter(r => r.person === p);
+        aoa.push(["", p, "", prs.length]);
+        for(const r of prs){
+          aoa.push(["", "", r.waybill, 1]);
+        }
+      }
+      return aoa;
+    }
+
+    function makeXlsx(aoa){
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+      return XLSX.write(wb, { bookType:"xlsx", type:"array" });
+    }
+
+    async function buildZip(rows, folder, suffix, startPct, spanPct){
+      const orgs = unique(rows.map(r => r.org));
+      for(let i = 0; i < orgs.length; i++){
+        const org = orgs[i];
+        const aoa = build(rows, org);
+        const file = makeXlsx(aoa);
+
+        folder.file(
+          sanitize(org) + "_" + suffix + ".xlsx",
+          file
+        );
+
+        setProgress(startPct + ((i + 1) / orgs.length) * spanPct);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    function confettiBurst(){
+      confetti.innerHTML = '';
+      const colors = ['#007aff','#5ac8fa','#30d158','#ffd60a','#ff5f57','#af52de'];
+      const rect = confetti.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      for(let i = 0; i < 22; i++){
+        const p = document.createElement('div');
+        p.className = 'piece';
+        const left = centerX + (Math.random() * 60 - 30);
+        p.style.left = left + 'px';
+        p.style.top = '72px';
+        p.style.background = colors[i % colors.length];
+        p.style.setProperty('--x0', '0px');
+        p.style.setProperty('--y0', '0px');
+        p.style.setProperty('--x1', (Math.random() * 260 - 130) + 'px');
+        p.style.setProperty('--y1', (150 + Math.random() * 90) + 'px');
+        p.style.setProperty('--rot', (Math.random() * 540 - 270) + 'deg');
+        p.style.animationDelay = (Math.random() * 120) + 'ms';
+        confetti.appendChild(p);
+      }
+      setTimeout(() => confetti.innerHTML = '', 1500);
+    }
+
+    exportBtn.addEventListener('mousemove', e => {
+      if(exportBtn.disabled) return;
+      const rect = exportBtn.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const mx = (x - rect.width / 2) / rect.width * 8;
+      const my = (y - rect.height / 2) / rect.height * 6;
+      exportBtn.style.transform = `translate(${mx}px, ${my}px)`;
+    });
+
+    exportBtn.addEventListener('mouseleave', () => {
+      if(exportBtn.disabled) return;
+      exportBtn.style.transform = '';
+    });
+
+    async function run(){
+      if(!file1 || !file2){
+        setStatus('Drop two Excel files', 'err');
+        return;
+      }
+
+      try{
+        setBusy(true);
+        setStatus('Reading…');
+        setProgress(8);
+
+        const rows1 = await readExcel(file1);
+        const rows2 = await readExcel(file2);
+
+        const zip = new JSZip();
+        const date = new Date().toISOString().slice(0,10);
+
+        await buildZip(rows1, zip.folder("Suspected"), "Suspected lost packages", 10, 35);
+        await buildZip(rows2, zip.folder("Interruptions"), "Interruptions packages", 45, 35);
+
+        setStatus('Compressing…');
+        setProgress(84);
+
+        const blob = await zip.generateAsync({type:"blob"}, meta => {
+          setProgress(84 + meta.percent * 0.16);
+        });
+
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "Exports_" + date + ".zip";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+
+        setProgress(100);
+        setStatus('Done', 'ok');
+        confettiBurst();
+      }catch(e){
+        setStatus('Export failed', 'err');
+        setProgress(0);
+      }finally{
+        setBusy(false);
+      }
+    }
+
+    exportBtn.addEventListener('click', run);
+  </script>
 </body>
 </html>
