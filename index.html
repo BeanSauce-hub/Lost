@@ -400,8 +400,6 @@
     }
 
     function setupDrop(zone, input, setFile, textEl){
-      zone.addEventListener('click', () => input.click());
-
       input.addEventListener('change', e => {
         const f = e.target.files?.[0];
         if(!f) return;
@@ -409,16 +407,16 @@
         textEl.textContent = f.name;
         zone.classList.add('ready');
       });
-
+    
       zone.addEventListener('dragover', e => {
         e.preventDefault();
         zone.classList.add('drag');
       });
-
+    
       zone.addEventListener('dragleave', () => {
         zone.classList.remove('drag');
       });
-
+    
       zone.addEventListener('drop', e => {
         e.preventDefault();
         zone.classList.remove('drag');
